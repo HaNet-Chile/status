@@ -1,0 +1,141 @@
+<!DOCTYPE html> <html lang=en> <head> <meta charset=utf-8> <meta content="width=device-width,initial-scale=1" name=viewport> <meta content=#333333 name=theme-color> <base href=/ > <link href=manifest.json rel=manifest crossorigin=use-credentials> <script>__SAPPER__={baseUrl:"",preloaded:[void 0,{}]};if('serviceWorker' in navigator)navigator.serviceWorker.register('/service-worker.js');(function(){try{eval("async function x(){}");var main="/client/client.14704d3f.js"}catch(e){main="/client/legacy/client.abcf6e0e.js"};var s=document.createElement("script");try{new Function("if(0)import('')")();s.src=main;s.type="module";s.crossOrigin="use-credentials";}catch(e){s.src="/client/shimport@2.0.5.js";s.setAttribute("data-main",main);}document.head.appendChild(s);}());</script> <link href=client/client-31a52aa5.css rel=stylesheet><link href=client/createOctokit-a85f76c7.css rel=stylesheet><link href=client/index-b0b6455a.css rel=stylesheet> <title>Estado de HaNet</title><link href=https://status.hanet.muxp.art/themes/dark.css rel=stylesheet><link href=https://status.hanet.muxp.art/global.css rel=stylesheet><link href=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%224%200%2031%2043%22%3E%3Cpath%20d%3D%22M5.02344%2040.8102V2.18981V0L15.3522%209.55556V19.5093L20.5166%2020.1065V13.338L34.0234%2014.5324V16.7222V26.2778V28.4676L20.5166%2029.662V22.8935L15.3522%2023.4907V33.4444L5.02344%2043V40.8102Z%22%20fill%3D%22%23EF2274%22%2F%3E%3C%2Fsvg%3E rel=icon type=image/svg><link href=/logo-192.png rel=icon type=image/png><link href=https://fonts.gstatic.com rel=preconnect><link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400..700&display=swap" rel=stylesheet><meta content="Estado en vivo de HaNet, sus servidores y las mantenciones programadas." name=description><meta content=#282829 name=theme-color><script>// Estado de HaNet: lo que la página de Upptime no hace sola.
+//  1. Si el equipo cerró HaNet (Panel HNT → Estado de HaNet), muestra el aviso
+//     con su mensaje y la hora aproximada de vuelta, leídos en vivo de
+//     getAppStatus (público, con CORS abierto).
+//  2. Pasa al español los textos que Upptime escribe en inglés en los
+//     incidentes ("X is down", "Resolved: X is back up…") y saca los emojis.
+(function () {
+  var STATUS_URL = "https://southamerica-west1-hanet-edu.cloudfunctions.net/getAppStatus";
+  var REFRESH_MS = 60000;
+  var appStatus = null;
+
+  var COPY = {
+    maintenance: { title: "Estamos haciendo mantención", body: "HaNet vuelve en un rato. Lo tuyo está guardado." },
+    incident: { title: "Algo no anda bien en HaNet", body: "Ya lo estamos revisando. Lo tuyo está guardado." },
+    closed: { title: "HaNet está cerrado por ahora", body: "No te preocupes, lo tuyo está guardado." },
+  };
+
+  function backAt(until) {
+    var date = new Date(until);
+    var time = date.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+    if (date.toDateString() === new Date().toDateString()) return "Volvemos cerca de las " + time + ".";
+    var day = date.toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long" });
+    return "Volvemos cerca del " + day + " a las " + time + ".";
+  }
+
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text) node.textContent = text;
+    return node;
+  }
+
+  function renderBanner() {
+    var main = document.querySelector("main");
+    if (!main) return;
+    var old = main.querySelector(".hn-closed");
+    var onHome = location.pathname === "/" || location.pathname === "";
+    if (!appStatus || appStatus.open !== false || !onHome) {
+      if (old) old.remove();
+      return;
+    }
+    var kind = COPY[appStatus.kind] ? appStatus.kind : "maintenance";
+    var key = kind + "|" + (appStatus.message || "") + "|" + (appStatus.until || "");
+    if (old && old.getAttribute("data-key") === key) return;
+
+    var banner = el("section", "hn-closed" + (kind === "closed" ? " is-closed" : ""));
+    banner.setAttribute("data-key", key);
+    banner.setAttribute("role", "status");
+    banner.appendChild(el("h2", null, COPY[kind].title));
+    banner.appendChild(el("p", null, appStatus.message || COPY[kind].body));
+    if (appStatus.until) banner.appendChild(el("p", null, backAt(appStatus.until)));
+
+    if (old) old.replaceWith(banner);
+    else {
+      var header = main.querySelector("header");
+      if (header && header.nextSibling) main.insertBefore(banner, header.nextSibling);
+      else main.prepend(banner);
+    }
+  }
+
+  function loadStatus() {
+    fetch(STATUS_URL, { cache: "no-store" })
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (status) {
+        appStatus = status;
+        renderBanner();
+      })
+      .catch(function () {
+        // Sin respuesta: el monitor de Servidores ya lo muestra.
+      });
+  }
+
+  var RULES = [
+    [/^\s*[✅🛑⚠️🟩🟨🟥]+\s*/u, ""],
+    [/ is down$/, " no responde"],
+    [/ has degraded performance$/, " con problemas"],
+    [/^Resolved:?\s*/, "Resuelto: "],
+    [/ is back up in /, " volvió a funcionar en "],
+    [/ performance has improved in /, " volvió a la normalidad en "],
+    [/ after (\d+) minutes?\.?/, " después de $1 minutos."],
+    [/ was down:?/, " no respondía:"],
+    [/ experienced degraded performance:?/, " tuvo problemas:"],
+    [/^HTTP code: /, "Código HTTP: "],
+    [/^Response time: /, "Tiempo de respuesta: "],
+  [/(\d{1,2}:\d{2}):\d{2}/g, "$1"],
+  [/\b1 actualizaciones/, "1 actualización"],
+  ];
+
+  function translate(root) {
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    var node;
+    while ((node = walker.nextNode())) {
+      var before = node.nodeValue;
+      var after = before;
+      for (var i = 0; i < RULES.length; i++) after = after.replace(RULES[i][0], RULES[i][1]);
+      if (after !== before) node.nodeValue = after;
+    }
+  }
+
+  var scheduled = false;
+  function refresh() {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(function () {
+      scheduled = false;
+      var main = document.querySelector("main");
+      if (main) translate(main);
+      renderBanner();
+    });
+  }
+
+  function start() {
+    new MutationObserver(refresh).observe(document.body, { childList: true, subtree: true, characterData: true });
+    refresh();
+    loadStatus();
+    setInterval(loadStatus, REFRESH_MS);
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") loadStatus();
+    });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
+})(); </script> <link href=/client/client.14704d3f.js rel=modulepreload as=script crossorigin=use-credentials><link href=/client/client-31a52aa5.css rel=preload as=style><link href=/client/index.79a6ff06.js rel=modulepreload as=script crossorigin=use-credentials><link href=/client/createOctokit.83eabb92.js rel=modulepreload as=script crossorigin=use-credentials><link href=/client/inject_styles.803b7e80.js rel=modulepreload as=script crossorigin=use-credentials><link href=/client/createOctokit-a85f76c7.css rel=preload as=style><link href=/client/index-b0b6455a.css rel=preload as=style></head> <body> <div id=sapper> <nav class=svelte-a08hsz><div class="svelte-a08hsz container"><div><a href=/ class="svelte-a08hsz logo"><img alt="" class=svelte-a08hsz src=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%224%200%2031%2043%22%3E%3Cpath%20d%3D%22M5.02344%2040.8102V2.18981V0L15.3522%209.55556V19.5093L20.5166%2020.1065V13.338L34.0234%2014.5324V16.7222V26.2778V28.4676L20.5166%2029.662V22.8935L15.3522%2023.4907V33.4444L5.02344%2043V40.8102Z%22%20fill%3D%22%23EF2274%22%2F%3E%3C%2Fsvg%3E> <div>Estado de HaNet</div></a></div> <ul class=svelte-a08hsz><li><a href=/ class=svelte-a08hsz target=_self aria-current=page>Estado</a> <li><a href=https://app.hanet.muxp.art class=svelte-a08hsz target=_self>Abrir HaNet</a> <li><a href=https://docs.hanet.muxp.art class=svelte-a08hsz target=_self>Ayuda</a> </li> </ul></div> </nav> <main class=container> <header class=svelte-ngkazm><h1>Estado de HaNet</h1> <p class="svelte-ngkazm lead">Si algo no anda, aquí lo ves primero. Revisamos cada parte de HaNet cada 5 minutos.</header> <section class=svelte-8lnl4f><div class="svelte-68jxue loading"><svg class=svelte-68jxue height=38 stroke=#aaa width=38 xmlns=http://www.w3.org/2000/svg><g fill=none fill-rule=evenodd><g stroke-width=2 transform="translate(1 1)"><circle cx=18 cy=18 r=18 stroke-opacity=.5></circle><path d="M36 18c0-9.94-8.06-18-18-18"><animateTransform attributeName=transform dur=1s from="0 18 18" repeatCount=indefinite to="360 18 18" type=rotate></animateTransform></path></g></g></svg></div> </section> <section class=svelte-8lnl4f><div class="svelte-68jxue loading"><svg class=svelte-68jxue height=38 stroke=#aaa width=38 xmlns=http://www.w3.org/2000/svg><g fill=none fill-rule=evenodd><g stroke-width=2 transform="translate(1 1)"><circle cx=18 cy=18 r=18 stroke-opacity=.5></circle><path d="M36 18c0-9.94-8.06-18-18-18"><animateTransform attributeName=transform dur=1s from="0 18 18" repeatCount=indefinite to="360 18 18" type=rotate></animateTransform></path></g></g></svg></div> </section> <div class="svelte-fqsq6s f changed"><h2>En vivo</h2> <form class="svelte-fqsq6s f r"><div><input class=svelte-fqsq6s id=data_day name=d type=radio value=day><label class=svelte-fqsq6s for=data_day>24 h</label></div> <div><input class=svelte-fqsq6s id=data_week name=d type=radio value=week checked><label class=svelte-fqsq6s for=data_week>7 días</label></div> <div><input class=svelte-fqsq6s id=data_month name=d type=radio value=month><label class=svelte-fqsq6s for=data_month>30 días</label></div> <div><input class=svelte-fqsq6s id=data_year name=d type=radio value=year><label class=svelte-fqsq6s for=data_year>1 año</label></div> <div><input class=svelte-fqsq6s id=data_all name=d type=radio value=all><label class=svelte-fqsq6s for=data_all>Todo</label></div></form></div> <section class="svelte-fqsq6s live-status"><div class="svelte-68jxue loading"><svg class=svelte-68jxue height=38 stroke=#aaa width=38 xmlns=http://www.w3.org/2000/svg><g fill=none fill-rule=evenodd><g stroke-width=2 transform="translate(1 1)"><circle cx=18 cy=18 r=18 stroke-opacity=.5></circle><path d="M36 18c0-9.94-8.06-18-18-18"><animateTransform attributeName=transform dur=1s from="0 18 18" repeatCount=indefinite to="360 18 18" type=rotate></animateTransform></path></g></g></svg></div> </section> <section><div class="svelte-68jxue loading"><svg class=svelte-68jxue height=38 stroke=#aaa width=38 xmlns=http://www.w3.org/2000/svg><g fill=none fill-rule=evenodd><g stroke-width=2 transform="translate(1 1)"><circle cx=18 cy=18 r=18 stroke-opacity=.5></circle><path d="M36 18c0-9.94-8.06-18-18-18"><animateTransform attributeName=transform dur=1s from="0 18 18" repeatCount=indefinite to="360 18 18" type=rotate></animateTransform></path></g></g></svg></div> </section> <section><div class="svelte-68jxue loading"><svg class=svelte-68jxue height=38 stroke=#aaa width=38 xmlns=http://www.w3.org/2000/svg><g fill=none fill-rule=evenodd><g stroke-width=2 transform="translate(1 1)"><circle cx=18 cy=18 r=18 stroke-opacity=.5></circle><path d="M36 18c0-9.94-8.06-18-18-18"><animateTransform attributeName=transform dur=1s from="0 18 18" repeatCount=indefinite to="360 18 18" type=rotate></animateTransform></path></g></g></svg></div></section></main> <footer class=svelte-jbr799><p>Esta página es <a href=https://github.com/HaNet-Chile/status>de código abierto</a> y funciona con <a href=https://upptime.js.org>Upptime</a>. Contacto muxp@muxp.art</p> </footer></div> <script> try {
+        if (typeof window !== "undefined" && window.navigator && navigator.serviceWorker) {
+          navigator.serviceWorker.getRegistrations().then(function (registrations) {
+            for (let registration of registrations) {
+              registration.unregister();
+            }
+          });
+        }
+        if (typeof window !== "undefined" && "caches" in window) {
+          caches.keys().then(function (keyList) {
+            return Promise.all(
+              keyList.map(function (key) {
+                return caches.delete(key);
+              })
+            );
+          });
+        }
+      } catch (error) {} </script> 
